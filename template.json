@@ -1,0 +1,183 @@
+{
+  "$schema": "http://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "virtualMachineName": {
+      "type": "string",
+      "allowedValues": [
+        "dev-bgcanet-vs1",
+        "dev-bgcanet-vs2",
+        "dev-bgcanet-vs3",
+        "dev-bgcanet-vs4"
+      ]
+    },
+    "virtualNetworkName": {
+      "type": "string",
+      "allowedValues": [ "BGCA-MSDN-RM" ],
+      "defaultValue": "BGCA-MSDN-RM"
+    },
+    "subnetName": {
+      "type": "string",
+      "allowedValues": [ "dev-BGCA.net" ],
+      "defaultValue": "dev-BGCA.net"
+    }
+  },
+  "variables": {
+    "location": "eastus",
+    "adminUsername": "AzAdmin",
+    "virtualMachineSize": "Standard_DS2_v2",
+    "vnetId": "[resourceId('BGCA-Core','Microsoft.Network/virtualNetworks', parameters('virtualNetworkName'))]",
+    "subnetRef": "[concat(variables('vnetId'), '/subnets/', parameters('subnetName'))]",
+    "adminPassword": "19Bgca06!()^",
+    "storageAccountType": "Premium_LRS",
+    "publicIpAddressType": "Dynamic",
+    "ex0_vmName": "[parameters('virtualMachineName')]",
+    "ex0_location": "eastus",
+    "ex0_fileUris": "https://raw.githubusercontent.com/Azure/azure-quickstart-templates/master/visual-studio-dev-vm-chocolatey/scripts/SetupChocolatey.ps1",
+    "ex0_arguments": "visualstudio2013ultimate;sql-server-management-studio;sharepointdesigner2013x64",
+    "networkInterfaceName": "[concat('NIC-',parameters('virtualMachineName'))]",
+    "publicIpAddressName": "[concat('IP-',parameters('virtualMachineName'))]",
+    "storageAccountName": "[replace(parameters('virtualMachineName'),'-','')]"
+  },
+  "resources": [
+    {
+      "name": "[parameters('virtualMachineName')]",
+      "type": "Microsoft.Compute/virtualMachines",
+      "apiVersion": "2016-04-30-preview",
+      "location": "[variables('location')]",
+      "dependsOn": [
+        "[concat('Microsoft.Network/networkInterfaces/', variables('networkInterfaceName'))]",
+        "[concat('Microsoft.Storage/storageAccounts/', variables('storageAccountName'))]"
+      ],
+      "properties": {
+        "osProfile": {
+          "computerName": "[parameters('virtualMachineName')]",
+          "adminUsername": "[variables('adminUsername')]",
+          "adminPassword": "[variables('adminPassword')]",
+          "windowsConfiguration": {
+            "provisionVmAgent": "true"
+          }
+        },
+        "hardwareProfile": {
+          "vmSize": "[variables('virtualMachineSize')]"
+        },
+        "storageProfile": {
+          "imageReference": {
+            "publisher": "MicrosoftWindowsServer",
+            "offer": "WindowsServer",
+            "sku": "2012-R2-Datacenter",
+            "version": "latest"
+          },
+          "osDisk": {
+            "createOption": "fromImage",
+            "vhd": {
+              "uri": "[concat(concat(reference(resourceId('DEV-BGCA.net', 'Microsoft.Storage/storageAccounts', variables('storageAccountName')), '2015-06-15').primaryEndpoints['blob'], 'vhds/'), parameters('virtualMachineName'), '20170426185907.vhd')]"
+            },
+            "name": "[parameters('virtualMachineName')]"
+          },
+          "dataDisks": [
+            {
+              "lun": 0,
+              "name": "[concat(parameters('virtualMachineName'),'-datadisk')]",
+              "createOption": "Empty",
+              "vhd": {
+                 "uri": "[concat('https', '://', variables('storageAccountName'), '.blob.core.windows.net', concat('/vhds/', parameters('virtualMachinename'),'-datadisk.vhd'))]"
+                     },
+                 "caching": "ReadOnly",
+                 "diskSizeGB": 1023
+                     }
+          ]
+        },
+        "networkProfile": {
+          "networkInterfaces": [
+            {
+              "id": "[resourceId('Microsoft.Network/networkInterfaces', variables('networkInterfaceName'))]"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Microsoft.CustomScriptExtension-20170426185854",
+      "apiVersion": "2015-01-01",
+      "type": "Microsoft.Resources/deployments",
+      "properties": {
+        "mode": "incremental",
+        "templateLink": {
+          "uri": "https://gallery.azure.com/artifact/20161101/Microsoft.CustomScriptExtension-arm.2.0.50/Artifacts/MainTemplate.json"
+        },
+        "parameters": {
+          "vmName": {
+            "value": "[variables('ex0_vmName')]"
+          },
+          "location": {
+            "value": "[variables('ex0_location')]"
+          },
+          "fileUris": {
+            "value": "[variables('ex0_fileUris')]"
+          },
+          "arguments": {
+            "value": "[variables('ex0_arguments')]"
+          }
+        }
+      },
+      "dependsOn": [
+        "[concat('Microsoft.Compute/virtualMachines/', parameters('virtualMachineName'))]"
+      ]
+    },
+    {
+      "name": "[variables('storageAccountName')]",
+      "type": "Microsoft.Storage/storageAccounts",
+      "apiVersion": "2015-06-15",
+      "location": "[variables('location')]",
+      "properties": {
+        "accountType": "[variables('storageAccountType')]"
+      }
+    },
+    {
+      "name": "[variables('networkInterfaceName')]",
+      "type": "Microsoft.Network/networkInterfaces",
+      "apiVersion": "2016-09-01",
+      "location": "[variables('location')]",
+      "dependsOn": [
+        "[concat('Microsoft.Network/publicIpAddresses/', variables('publicIpAddressName'))]"
+      ],
+      "properties": {
+        "ipConfigurations": [
+          {
+            "name": "ipconfig1",
+            "properties": {
+              "subnet": {
+                "id": "[variables('subnetRef')]"
+              },
+              "privateIPAllocationMethod": "Dynamic",
+              "publicIpAddress": {
+                "id": "[resourceId('DEV-BGCA.net','Microsoft.Network/publicIpAddresses', variables('publicIpAddressName'))]"
+              }
+            }
+          }
+        ],
+        "dnsSettings": {
+          "dnsServers": [
+            "10.251.201.30"
+          ]
+        }
+      }
+    },
+    {
+      "name": "[variables('publicIpAddressName')]",
+      "type": "Microsoft.Network/publicIpAddresses",
+      "apiVersion": "2016-09-01",
+      "location": "[variables('location')]",
+      "properties": {
+        "publicIpAllocationMethod": "[variables('publicIpAddressType')]"
+      }
+    }
+  ],  
+  "outputs": {
+        "adminUsername": {
+            "type": "string",
+            "value": "[variables('adminUsername')]"
+        }
+    }
+}
